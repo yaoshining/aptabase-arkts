@@ -1,6 +1,17 @@
 # Aptabase ArkTS SDK
 
+**简体中文** · [English](./README.en.md)
+
+[![HarmonyOS API 17+](https://img.shields.io/badge/platform-HarmonyOS%20API%2017%2B-2563EB?style=flat)](#安装与初始化)
+[![ArkTS SDK](https://img.shields.io/badge/SDK-ArkTS-5357A6?style=flat)](aptabase/Index.ets)
+[![HAR version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fyaoshining%2Faptabase-arkts%2Fmain%2Faptabase%2Foh-package.json5&query=%24.version&label=HAR&prefix=v&color=0F766E&style=flat)](aptabase/CHANGELOG.md)
+[![OHPM HAR](https://img.shields.io/badge/OHPM-HAR-0F766E?style=flat)](#构建与发布)
+[![MIT License](https://img.shields.io/badge/license-MIT-64748B?style=flat)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/yaoshining/aptabase-arkts?style=flat&label=stars&color=DB8B16)](https://github.com/yaoshining/aptabase-arkts/stargazers)
+
 为 HarmonyOS 应用接入 Aptabase，一个开源、注重隐私的事件分析服务。本库基于 Kotlin SDK 移植，支持 Aptabase Cloud 和自托管实例。[Aptabase](https://aptabase.com/) · [Kotlin SDK 0.1.0](https://github.com/aptabase/aptabase-kotlin/tree/5696f5cf7e1595c207902616f5eba48f283c1b44)
+
+[安装与初始化](#安装与初始化) · [上报事件](#上报事件) · [构建与发布](#构建与发布) · [问题反馈](https://github.com/yaoshining/aptabase-arkts/issues)
 
 ## 安装与初始化
 
