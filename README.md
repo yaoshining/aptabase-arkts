@@ -85,7 +85,13 @@ properties.set('visit_count', 1);
 Aptabase.instance.trackEvent('screen_view', properties);
 ```
 
-事件在内存中排队并异步发送，最多同时发送五条请求。发送失败后该事件会被丢弃，错误会记入 HiLog。两次事件间隔超过一小时后，SDK 会生成新的随机会话 ID。更多字段和初始化规则见 [HAR 使用说明](aptabase/README.md)。
+事件在内存中排队并异步发送，最多同时发送五条请求，队列最多保留 64 条待发送事件。队列满时丢弃新事件。连接和读取超时各为 5 秒，发送失败会丢弃事件并记入 HiLog。两次事件间隔超过一小时后，SDK 会生成新的随机会话 ID。更多上报字段见 [HAR 使用说明](aptabase/README.md)。
+
+### 停止事件上报
+
+用户撤回统计授权时，可调用 `Aptabase.instance.stop()`。SDK 会立即停用上报、清空待发送队列并清除当前会话。在支持 Remote Communication Kit 的设备上，SDK 会主动取消在途请求。其他设备会释放请求对象，已发出的连接可能持续到超时。服务端已经收到的事件仍由服务端处理。
+
+再次获得授权时，调用 `initialize()` 开始新会话。每次初始化都会先停止上一次上报，应用可在授权状态变更时调用这两个接口。
 
 ## 构建与发布
 

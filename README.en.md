@@ -85,7 +85,13 @@ properties.set('visit_count', 1);
 Aptabase.instance.trackEvent('screen_view', properties);
 ```
 
-Events queue in memory and are sent asynchronously, with up to five requests in flight. The SDK drops failed events and logs the errors to HiLog. The first event after more than one hour of inactivity gets a new random session ID.
+The SDK sends events asynchronously, with up to five requests in flight and 64 events waiting in memory. It drops new events when the queue is full. Connection and read timeouts are five seconds each. Failed events are dropped, and their errors are logged to HiLog. The first event after more than one hour of inactivity gets a new random session ID.
+
+### Stop tracking
+
+Call `Aptabase.instance.stop()` when a user withdraws analytics consent. It disables tracking immediately and clears the queue and current session. On devices with Remote Communication Kit, it also actively cancels in-flight requests. On other devices, it releases the request objects, and connections may remain open until they time out. The server may still process events it has already received.
+
+Call `initialize()` after consent is granted again to start a new session. Each initialization stops the previous tracking session first.
 
 ## Build and publish
 

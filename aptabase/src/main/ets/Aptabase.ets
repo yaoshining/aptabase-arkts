@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { url, util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { http } from '@kit.NetworkKit';
+import lazy { rcp } from '@kit.RemoteCommunicationKit';
 import { HAR_VERSION } from '../../../BuildProfile';
 import { EnvironmentInfo } from './EnvironmentInfo';
 
@@ -21,6 +22,8 @@ export type EventProperties = ReadonlyMap<string, string | number>;
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_IN_FLIGHT = 5;
+const MAX_PENDING = 64;
+const REQUEST_TIMEOUT_MS = 5000;
 const LOG_DOMAIN = 0x0000;
 const LOG_TAG = 'Aptabase';
 const EVENT_PATH = '/api/v0/event';
@@ -60,6 +63,11 @@ interface EventBody {
   props: Record<string, string | number>;
 }
 
+interface EventRequest {
+  send: (endpoint: string, headers: Record<string, string>, body: string) => Promise<number>;
+  close: (cancel: boolean) => void;
+}
+
 export class Aptabase {
   static readonly instance: Aptabase = new Aptabase();
 
@@ -67,13 +75,12 @@ export class Aptabase {
   private sessionId: string = '';
   private lastTouched: number = 0;
   private readonly pending: PendingEvent[] = [];
-  private inFlight: number = 0;
+  private readonly requests: Set<EventRequest> = new Set();
 
   private constructor() {}
 
   initialize(context: common.Context, appKey: string, opts?: InitOptions | null): void {
-    const previous = this.config;
-    this.config = undefined;
+    this.stop();
     const parts = appKey.split('-');
     if (parts.length !== 3 || parts[0] !== 'A' || !/^[a-zA-Z0-9]+$/.test(parts[2])) {
       hilog.warn(LOG_DOMAIN, LOG_TAG, 'Invalid App Key. Tracking is disabled.');
@@ -90,18 +97,24 @@ export class Aptabase {
       const env = EnvironmentInfo.get(context);
       const mode = opts?.trackingMode ?? TrackingMode.readFromEnvironment;
       const systemProps = new SystemProps(env, mode, opts?.appVersion);
-      if (previous?.appKey !== appKey || previous?.endpoint !== endpoint) {
-        this.sessionId = '';
-      }
       this.config = { appKey, endpoint, systemProps };
     } catch (_) {
       hilog.warn(LOG_DOMAIN, LOG_TAG, 'Could not read application metadata. Tracking is disabled.');
     }
   }
 
+  stop(): void {
+    this.config = undefined;
+    this.sessionId = '';
+    this.lastTouched = 0;
+    this.pending.length = 0;
+    this.requests.forEach((request: EventRequest) => this.closeRequest(request, true));
+    this.requests.clear();
+  }
+
   trackEvent(eventName: string, props?: EventProperties): void {
     const config = this.config;
-    if (config === undefined) {
+    if (config === undefined || this.pending.length >= MAX_PENDING) {
       return;
     }
 
@@ -123,46 +136,95 @@ export class Aptabase {
   }
 
   private drain(): void {
-    while (this.inFlight < MAX_IN_FLIGHT && this.pending.length > 0) {
+    while (this.requests.size < MAX_IN_FLIGHT && this.pending.length > 0) {
       const event = this.pending.shift();
       if (event === undefined) {
         return;
       }
-      this.inFlight += 1;
-      this.send(event).finally(() => {
-        this.inFlight -= 1;
-        this.drain();
+      void this.send(event).finally(() => {
+        if (this.config === event.config) {
+          this.drain();
+        }
       });
     }
   }
 
   private async send(event: PendingEvent): Promise<void> {
-    let connection: http.HttpRequest | undefined;
+    let connection: EventRequest | undefined;
     try {
-      connection = http.createHttp();
+      connection = createEventRequest();
+      this.requests.add(connection);
       const headers: Record<string, string> = {
         'App-Key': event.config.appKey,
         'Content-Type': 'application/json',
       };
-      const response = await connection.request(event.config.endpoint, {
-        method: http.RequestMethod.POST,
-        header: headers,
-        extraData: event.body,
-        usingCache: false,
-      });
-      if (response.responseCode < 200 || response.responseCode >= 300) {
-        hilog.warn(LOG_DOMAIN, LOG_TAG, 'Event request returned HTTP %{public}d.', response.responseCode);
+      const status = await connection.send(event.config.endpoint, headers, event.body);
+      if (this.requests.has(connection) && (status < 200 || status >= 300)) {
+        hilog.warn(LOG_DOMAIN, LOG_TAG, 'Event request returned HTTP %{public}d.', status);
       }
     } catch (_) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, 'Event request failed.');
+      if (connection === undefined || this.requests.has(connection)) {
+        hilog.warn(LOG_DOMAIN, LOG_TAG, 'Event request failed.');
+      }
     } finally {
-      try {
-        connection?.destroy();
-      } catch (_) {
-        hilog.warn(LOG_DOMAIN, LOG_TAG, 'Could not release the HTTP request.');
+      if (connection !== undefined && this.requests.delete(connection)) {
+        this.closeRequest(connection, false);
       }
     }
   }
+
+  private closeRequest(request: EventRequest, cancel: boolean): void {
+    try {
+      request.close(cancel);
+    } catch (_) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, 'Could not release the HTTP request.');
+    }
+  }
+}
+
+function createEventRequest(): EventRequest {
+  if (canIUse('SystemCapability.Collaboration.RemoteCommunication')) {
+    const session = rcp.createSession({
+      requestConfiguration: {
+        transfer: {
+          timeout: { connectMs: REQUEST_TIMEOUT_MS, inactivityMs: REQUEST_TIMEOUT_MS },
+        },
+      },
+    });
+    const connection: EventRequest = {
+      send: async (endpoint: string, headers: Record<string, string>, body: string): Promise<number> => {
+        const response = await session.fetch(new rcp.Request(endpoint, 'POST', headers, body));
+        return response.statusCode;
+      },
+      close: (cancel: boolean): void => {
+        try {
+          if (cancel) {
+            session.cancel();
+          }
+        } finally {
+          session.close();
+        }
+      },
+    };
+    return connection;
+  }
+
+  const request = http.createHttp();
+  const connection: EventRequest = {
+    send: async (endpoint: string, headers: Record<string, string>, body: string): Promise<number> => {
+      const response = await request.request(endpoint, {
+        method: http.RequestMethod.POST,
+        header: headers,
+        extraData: body,
+        usingCache: false,
+        connectTimeout: REQUEST_TIMEOUT_MS,
+        readTimeout: REQUEST_TIMEOUT_MS,
+      });
+      return response.responseCode;
+    },
+    close: (_cancel: boolean): void => request.destroy(),
+  };
+  return connection;
 }
 
 function toJsonProperties(props?: EventProperties): Record<string, string | number> {
