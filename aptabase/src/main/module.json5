@@ -1,0 +1,17 @@
+{
+  "module": {
+    "name": "aptabase",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet",
+      "2in1",
+      "car",
+      "wearable",
+      "tv"
+    ],
+    "requestPermissions": [
+      { "name": "ohos.permission.INTERNET" }
+    ]
+  }
+}
