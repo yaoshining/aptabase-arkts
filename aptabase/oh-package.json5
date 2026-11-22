@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "面向 HarmonyOS 的 Aptabase 事件分析 SDK，支持 Aptabase Cloud 和自托管实例。",
   "main": "Index.ets",
-  "author": "Aptabase ArkTS Contributors",
+  "author": {
+    "name": "Aptabase ArkTS Contributors",
+    "url": "https://github.com/yaoshining/aptabase-arkts"
+  },
   "license": "MIT",
   "repository": "https://github.com/yaoshining/aptabase-arkts",
   "keywords": [
